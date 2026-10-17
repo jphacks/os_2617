@@ -1,0 +1,16 @@
+# Render Blueprint（New → Blueprint でこのリポジトリを選ぶと、この設定でWebサービスが作られます）
+services:
+  - type: web
+    name: mise-kime
+    runtime: node
+    plan: free
+    region: singapore # 日本から近いリージョン（作成後は変更不可）。Neon も Singapore に揃える
+    buildCommand: npm ci
+    startCommand: npm start
+    healthCheckPath: /healthz
+    autoDeployTrigger: commit # GitHub の main に push すると自動で再デプロイ
+    envVars:
+      - key: DATABASE_URL # Neon の接続文字列。作成時に画面で入力する（ここには書かない）
+        sync: false
+      - key: DEMO_TOOLS # "false" にするとホスト画面の「サンプル回答を追加」を隠す
+        value: "true"
