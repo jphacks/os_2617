@@ -1,7 +1,7 @@
 {
   "name": "mise-kime",
   "version": "1.0.0",
-  "description": "みんなで店決め：グループの食事のお店をアンケートで決めるアプリ",
+  "description": "MealManager：グループの食事のお店をアンケートで決めるアプリ",
   "main": "server.js",
   "private": true,
   "scripts": {

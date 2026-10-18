@@ -1,4 +1,4 @@
-/* みんなで店決め - 1カラム・モバイルファーストのカード積み */
+/* MealManager - 1カラム・モバイルファーストのカード積み */
 :root {
   --bg: #f7f3ee;
   --surface: #ffffff;
@@ -14,7 +14,7 @@
   --on-primary: #ffffff;
   --good: #2f7d4f;
   --good-soft: #e7f5ec;
-  --great: #16a34a; --great-soft: #dff4e7; --ok: #2f80ed; --ok-soft: #e4eefc; --ng: #e5484d; --ng-soft: #fde8ea;
+  --great: #16a34a; --great-soft: #dff4e7; --ok: #2f80ed; --ok-soft: #e4eefc; --ng: #e5484d; --ng-soft: #fde8ea; --great-tint: #ddf3e4; --ok-tint: #e1ebfb; --ng-tint: #fce1e4;
   --warn: #995700;
   --warn-soft: #fff4dc;
   --error: #b42318;
@@ -31,7 +31,7 @@
     --bg: #1b1816; --surface: #26221f; --surface-2: #2d2825; --tint: #36302c;
     --text: #f2ece6; --muted: #a99f96; --line: #3b3531;
     --primary: #f26b35; --primary-strong: #ff9264; --primary-soft: #3a2419; --range-from: #9a4320; --on-primary: #1b1816;
-    --good: #7fd3a1; --good-soft: #1e3328; --warn: #f2b863; --warn-soft: #3a2d17; --great: #5fd38d; --great-soft: #1c3527; --ok: #7ab0ff; --ok-soft: #1d2b40; --ng: #ff8085; --ng-soft: #3d2022;
+    --good: #7fd3a1; --good-soft: #1e3328; --warn: #f2b863; --warn-soft: #3a2d17; --great: #5fd38d; --great-soft: #1c3527; --ok: #7ab0ff; --ok-soft: #1d2b40; --ng: #ff8085; --ng-soft: #3d2022; --great-tint: #173322; --ok-tint: #172840; --ng-tint: #3d1c20;
     --error: #ff9a90; --error-soft: #3b1f1d;
     --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 4px 16px rgba(0, 0, 0, 0.25);
     color-scheme: dark;
@@ -41,7 +41,7 @@
   --bg: #1b1816; --surface: #26221f; --surface-2: #2d2825; --tint: #36302c;
   --text: #f2ece6; --muted: #a99f96; --line: #3b3531;
   --primary: #f26b35; --primary-strong: #ff9264; --primary-soft: #3a2419; --range-from: #9a4320; --on-primary: #1b1816;
-  --good: #7fd3a1; --good-soft: #1e3328; --warn: #f2b863; --warn-soft: #3a2d17; --great: #5fd38d; --great-soft: #1c3527; --ok: #7ab0ff; --ok-soft: #1d2b40; --ng: #ff8085; --ng-soft: #3d2022;
+  --good: #7fd3a1; --good-soft: #1e3328; --warn: #f2b863; --warn-soft: #3a2d17; --great: #5fd38d; --great-soft: #1c3527; --ok: #7ab0ff; --ok-soft: #1d2b40; --ng: #ff8085; --ng-soft: #3d2022; --great-tint: #173322; --ok-tint: #172840; --ng-tint: #3d1c20;
   --error: #ff9a90; --error-soft: #3b1f1d;
   --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 4px 16px rgba(0, 0, 0, 0.25);
   color-scheme: dark;
@@ -56,7 +56,9 @@ a { color: var(--primary); }
 .site-header { background: var(--surface); border-bottom: 1px solid var(--line); }
 .site-header .wrap { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-block: 14px; }
 .logo { font-weight: 800; font-size: 18px; color: var(--text); text-decoration: none; letter-spacing: 0.02em; background: none; border: 0; padding: 0; cursor: pointer; font-family: inherit; }
-.logo span { color: var(--primary); }
+.logo { display: inline-flex; align-items: center; gap: 8px; }
+.logo-icon { width: 30px; height: 30px; flex-shrink: 0; display: block; }
+.logo .m { color: var(--primary); }
 .mode { font-size: 11px; padding: 2px 8px; border-radius: 999px; background: var(--tint); color: var(--muted); white-space: nowrap; }
 .mode.shared { background: var(--good-soft); color: var(--good); }
 
@@ -233,6 +235,10 @@ details.breakdown summary { cursor: pointer; color: var(--muted); }
 .details-toggle .muted { flex: 1; min-width: 0; font-weight: 400; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .details-toggle .chevron { width: 8px; height: 8px; border-right: 2px solid var(--muted); border-bottom: 2px solid var(--muted); transform: rotate(45deg); transition: transform 0.15s; margin-right: 4px; }
 .details-toggle[aria-expanded="true"] .chevron { transform: rotate(-135deg); }
+.toggle-heading { margin: 0; font-size: inherit; }
+.summary-card { padding: 12px; }
+.summary-card .details-body { padding: 14px 6px 6px; }
+fieldset.details-body { border: 0; margin: 0; min-width: 0; }
 .details-body { padding: 16px 2px 0; }
 
 /* ルームコード入力（画面上部） */
@@ -332,3 +338,15 @@ details.breakdown summary { cursor: pointer; color: var(--muted); }
   .swipe-stage { max-width: 420px; }
   .swipe-btn .mark { width: 64px; height: 64px; }
 }
+
+/* スワイプ中：傾けている向きを背景色とボタンで示す */
+.swipe-tint { position: fixed; inset: 0; z-index: -1; pointer-events: none; opacity: 0; transition: opacity 0.12s linear; }
+.swipe-tint[data-intent="great"] { background: var(--great-tint); }
+.swipe-tint[data-intent="ok"] { background: var(--ok-tint); }
+.swipe-tint[data-intent="ng"] { background: var(--ng-tint); }
+.swipe[data-intent="great"] .b-great .mark,
+.swipe[data-intent="ok"] .b-ok .mark,
+.swipe[data-intent="ng"] .b-ng .mark { transform: scale(1.12); box-shadow: 0 0 0 3px currentColor inset; }
+.swipe[data-intent="great"] .b-great small,
+.swipe[data-intent="ok"] .b-ok small,
+.swipe[data-intent="ng"] .b-ng small { color: var(--text); }

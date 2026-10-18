@@ -1,5 +1,5 @@
 /**
- * みんなで店決め - API サーバー
+ * MealManager - API サーバー
  *
  *   npm install
  *   npm start                      → http://localhost:3000（データはメモリ）
@@ -374,7 +374,7 @@ async function main() {
   if (shopClient.kind === 'hotpepper') shopClient.verifyGenres(); // ジャンル対応表の確認（ログのみ・待たない）
   const port = Number(process.env.PORT) || 3000;
   const server = app.listen(port, () => {
-    console.log(`みんなで店決め: http://localhost:${port} (store: ${store.kind}, shops: ${shopClient.kind})`);
+    console.log(`MealManager: http://localhost:${port} (store: ${store.kind}, shops: ${shopClient.kind})`);
   });
   const shutdown = () => server.close(() => store.close().finally(() => process.exit(0)));
   process.on('SIGTERM', shutdown);

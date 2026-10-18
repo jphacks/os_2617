@@ -1,5 +1,5 @@
 /**
- * みんなで店決め - フロントエンド（1ページのアプリ）
+ * MealManager - フロントエンド（1ページのアプリ）
  *
  *   /                       ルーム作成
  *   /rooms/:id/host?token=  共有リンク表示（ホスト用：回答状況・締め切り）
@@ -35,6 +35,14 @@
   const subsOf = (v) => categoryOf(v).subs;
   const asksNomihodai = (v) => !OPT.categoriesWithoutNomihodai.includes(v);
   const extLink = (href, text, cls) => '<a' + (cls ? ' class="' + cls + '"' : '') + ' href="' + esc(href) + '" target="_blank" rel="noopener noreferrer">' + text + '</a>';
+  /** 「詳細設定」型の開閉ボタン（aria-controls の要素を出し入れする） */
+  function bindToggle(btn) {
+    btn.addEventListener('click', () => {
+      const open = btn.getAttribute('aria-expanded') !== 'true';
+      btn.setAttribute('aria-expanded', String(open));
+      document.getElementById(btn.getAttribute('aria-controls')).hidden = !open;
+    });
+  }
 
   /** ルームの小カテゴリが既定と違うとき「追加：もつ鍋／削除：バー」 */
   function subChanges(room) {
@@ -161,13 +169,13 @@
   const roomTitle = (room) => fmtDatetime(room.datetime) + ' ' + room.locationName + 'で' + categoryOf(room.category).label;
   /** 招待：アンケートへの共有リンク */
   const inviteLines = (room) => [
-    '【みんなで店決め】' + roomTitle(room) + 'のお店をアンケートで決めます！',
+    '【MealManager】' + roomTitle(room) + 'のお店をアンケートで決めます！',
     'ジャンルの好みをスワイプで 〇ー× 答えるだけ（30秒）',
     room.shareUrl,
   ];
   /** 結果：上位3件とランキングのページ */
   const resultLines = (room, ranking) => [
-    '【みんなで店決め】' + roomTitle(room) + 'のお店、結果が出ました！',
+    '【MealManager】' + roomTitle(room) + 'のお店、結果が出ました！',
     ...ranking.slice(0, 3).map((r) => r.rank + '位 ' + r.name + '（' + r.subLabel + '）'),
     location.origin + '/rooms/' + room.roomId + '/result',
   ];
@@ -286,20 +294,11 @@
       <h1>グループのお店を、<br>アンケートで決めよう</h1>
       <p class="lead">条件を入れてルームを作成し、リンクを共有するだけ。全員が回答するとおすすめのお店 TOP5 が表示されます。</p>
 
-      <section class="card join-card">
-        <h2>ルームコードで参加</h2>
-        <form class="share-box" id="join-form" novalidate>
-          <input type="text" id="join-code" maxlength="8" placeholder="例：1f330b6c" autocomplete="off" aria-label="ルームコード">
-          <button class="btn btn-secondary" type="submit">参加</button>
-        </form>
-        <p class="error" id="join-error" hidden></p>
-      </section>
-
       <form class="card" id="create-form" novalidate>
         <h2>ルームを作成</h2>
         <label class="field"><span class="field-label">場所 <small>駅名・地名など</small></span>
           <input type="text" id="location" maxlength="${OPT.locationMax}" placeholder="例：梅田、渋谷駅、京都 河原町" autocomplete="off" required${sample ? ' list="sample-areas" value="梅田"' : ''}>
-          ${sample ? '<datalist id="sample-areas">' + OPT.sampleAreas.map((a) => '<option value="' + esc(a) + '">').join('') + '</datalist><span class="muted field-hint">サンプルデータで動作中：' + esc(OPT.sampleAreas.join('・')) + ' などで試せます</span>' : '<span class="muted field-hint">ホットペッパーのキーワード検索で場所を探します</span>'}
+          ${sample ? '<datalist id="sample-areas">' + OPT.sampleAreas.map((a) => '<option value="' + esc(a) + '">').join('') + '</datalist><span class="muted field-hint">サンプルデータで動作中：' + esc(OPT.sampleAreas.join('・')) + ' などで試せます</span>' : ''}
         </label>
         <label class="field"><span class="field-label">人数 <small>ホストを含む</small></span>
           <div class="input-suffix"><input type="number" id="people" min="1" max="${OPT.maxPeople}" value="4" required><span>人</span></div>
@@ -313,8 +312,12 @@
         <fieldset class="field"><legend class="field-label">ジャンル</legend>
           ${chips('category', OPT.categories, 'radio', 'izakaya')}
         </fieldset>
-        <fieldset class="field sub-editor"><legend class="field-label">評価する小カテゴリ <small>このルームだけの設定</small></legend>
-          <p class="muted" style="margin:0 0 8px">参加者はこれらをスワイプで 〇ー× 評価します。× で削除、下の欄から追加できます</p>
+        <div class="field">
+          <button class="details-toggle" type="button" id="subs-toggle" aria-expanded="false" aria-controls="subs-body">
+            <span>評価する小カテゴリ</span><span class="muted" id="subs-summary"></span><span class="chevron" aria-hidden="true"></span>
+          </button>
+          <fieldset class="details-body sub-editor" id="subs-body" hidden><legend class="visually-hidden">評価する小カテゴリ</legend>
+          <p class="muted" style="margin:0 0 8px">このルームだけの設定です。参加者はこれらをスワイプで 〇ー× 評価します。× で削除、下の欄から追加できます</p>
           <div class="sub-chips" id="sub-chips"></div>
           <div class="sub-removed" id="sub-removed" hidden></div>
           <div class="share-box sub-add">
@@ -322,7 +325,8 @@
             <button class="btn btn-ghost" type="button" id="sub-add-btn">追加</button>
           </div>
           <p class="error" id="sub-error" hidden></p>
-        </fieldset>
+          </fieldset>
+        </div>
 
         <div class="field">
           <button class="details-toggle" type="button" id="details-toggle" aria-expanded="false" aria-controls="details">
@@ -338,6 +342,15 @@
         <p class="error" id="create-error" hidden></p>
         <button class="btn btn-primary btn-block" type="submit" id="create-btn">ルームを作成する</button>
       </form>
+
+      <section class="card join-card">
+        <h2>ルームコードで参加</h2>
+        <form class="share-box" id="join-form" novalidate>
+          <input type="text" id="join-code" maxlength="8" placeholder="例：1f330b6c" autocomplete="off" aria-label="ルームコード">
+          <button class="btn btn-secondary" type="submit">参加</button>
+        </form>
+        <p class="error" id="join-error" hidden></p>
+      </section>
 
       <section class="card" id="my-rooms" hidden>
         <h2>この端末で作成したルーム</h2>
@@ -384,6 +397,9 @@
       box.hidden = !removed.length;
       box.innerHTML = '<span class="muted">削除したもの：</span>' + removed.map((s) =>
         '<button type="button" class="sub-restore" data-restore="' + esc(s.value) + '" aria-label="' + esc(s.label) + 'を戻す">＋ ' + esc(s.label) + '</button>').join('');
+      const subs = activeSubs();
+      const changes = [subEdit.custom.length ? '追加：' + subEdit.custom.join('・') : '', removed.length ? '削除：' + removed.map((s) => s.label).join('・') : ''].filter(Boolean).join('／');
+      document.getElementById('subs-summary').textContent = subs.length + '項目' + (changes ? '（' + changes + '）' : '：' + subs.map((s) => s.label).join('・'));
     };
     const addSub = () => {
       const input = document.getElementById('sub-add-input');
@@ -415,12 +431,7 @@
     document.getElementById('sub-add-input').addEventListener('keydown', (e) => {
       if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); addSub(); }
     });
-    const toggle = document.getElementById('details-toggle');
-    toggle.addEventListener('click', () => {
-      const open = toggle.getAttribute('aria-expanded') !== 'true';
-      toggle.setAttribute('aria-expanded', String(open));
-      document.getElementById('details').hidden = !open;
-    });
+    form.querySelectorAll('.details-toggle').forEach(bindToggle);
     const showSubs = () => {
       const cat = currentCat();
       subEdit.removed.clear();
@@ -526,7 +537,7 @@
           <div class="share-box"><input type="text" id="share-url" value="${esc(room.shareUrl)}" readonly aria-label="共有リンク"><button class="btn btn-primary" type="button" id="copy-url">コピー</button></div>
           <p class="muted" style="margin:10px 0 4px">ルームコード</p>
           <div class="share-box"><input type="text" id="room-code" class="code" value="${esc(room.roomId)}" readonly aria-label="ルームコード"><button class="btn btn-ghost" type="button" id="copy-code">コピー</button></div>
-          <p class="muted" style="margin:10px 0 12px">LINE やメールでリンクを送ってください。開くとアンケート画面が表示されます。</p>
+          <p class="muted" style="margin:10px 0 12px">Bluesky やメールでリンクを送ってください。開くとアンケート画面が表示されます。</p>
           ${closed ? '' : bskyButton(inviteLines(room), 'Blueskyで共有', 'btn-secondary')}
         </section>
 
@@ -635,6 +646,17 @@
    */
   function runSwipeSurvey(root, opts) {
     const { subs, ratings, defaultRating, imageFor, onSubmit } = opts;
+    // 傾けている向きを画面の背景色で示す（好き＝薄い緑、どちらでもない＝薄い青、好みじゃない＝薄い赤）
+    const tint = document.createElement('div');
+    tint.className = 'swipe-tint';
+    tint.setAttribute('aria-hidden', 'true');
+    document.body.appendChild(tint);
+    const setTint = (intent, strength) => {
+      tint.dataset.intent = intent || '';
+      tint.style.opacity = intent ? String(strength) : '0';
+      const box = root.querySelector('.swipe');
+      if (box) box.dataset.intent = intent && strength >= 0.35 ? intent : '';
+    };
     const byValue = Object.fromEntries(ratings.map((r) => [r.value, r]));
     const answers = {};
     let stage = 'intro'; // intro → cards → confirm
@@ -679,6 +701,7 @@
 
     function renderCard() {
       window.scrollTo(0, 0);
+      setTint('', 0);
       const sub = subs[index];
       const next = subs[index + 1];
       const prev = answers[sub.value];
@@ -741,6 +764,7 @@
         const dist = Math.hypot(dx, dy);
         card.dataset.intent = dist > 12 ? intentOf() : '';
         card.style.setProperty('--stamp', Math.min(1, dist / SWIPE_COMMIT_PX).toFixed(2));
+        setTint(dist > 12 ? intentOf() : '', Math.min(1, dist / SWIPE_COMMIT_PX));
       });
       const end = (e) => {
         if (e.pointerId !== id) return;
@@ -749,7 +773,7 @@
         const dist = Math.hypot(dx, dy);
         const speed = dist / Math.max(1, performance.now() - t0); // px/ms
         if (dist > SWIPE_COMMIT_PX || (dist > 30 && speed > 0.5)) commit(intentOf(), dx, dy);
-        else { card.style.transform = ''; card.dataset.intent = ''; }
+        else { card.style.transform = ''; card.dataset.intent = ''; setTint('', 0); }
       };
       card.addEventListener('pointerup', end);
       card.addEventListener('pointercancel', end);
@@ -771,6 +795,7 @@
       const y = value === 'ok' ? lastOkDir : 0;
       card.dataset.intent = value;
       card.style.setProperty('--stamp', '1');
+      setTint(value, 1);
       card.style.transition = 'transform 0.28s ease-in, opacity 0.28s ease-in';
       card.style.transform = 'translate(' + (x * window.innerWidth * 1.1 + dx) + 'px,' + (y * window.innerHeight * 0.8 + dy) + 'px) rotate(' + x * 18 + 'deg)';
       card.style.opacity = '0';
@@ -785,6 +810,7 @@
 
     function renderConfirm() {
       window.scrollTo(0, 0);
+      setTint('', 0);
       root.innerHTML = `
         <form class="card" id="confirm-form" novalidate>
           <h2>回答の確認</h2>
@@ -833,7 +859,7 @@
     };
     document.addEventListener('keydown', onKey);
     render();
-    return () => document.removeEventListener('keydown', onKey);
+    return () => { document.removeEventListener('keydown', onKey); tint.remove(); };
   }
 
   /* =========================================================================
@@ -930,8 +956,11 @@
   function renderSummary(s, room) {
     const subs = room.subs.slice().sort((a, b) => s.subPoints[b.value] - s.subPoints[a.value]);
     return `
-      <section class="card">
-        <h2>みんなの回答まとめ <span class="muted" style="font-weight:400">${s.respondentCount}/${room.people}人・${room.closedReason === 'all_answered' ? '全員回答' : 'ホストが締切'}</span></h2>
+      <section class="card summary-card">
+        <h2 class="toggle-heading"><button class="details-toggle" type="button" id="summary-toggle" aria-expanded="false" aria-controls="summary-body">
+          <span>みんなの回答まとめ</span><span class="muted">${s.respondentCount}/${room.people}人・${room.closedReason === 'all_answered' ? '全員回答' : 'ホストが締切'}</span><span class="chevron" aria-hidden="true"></span>
+        </button></h2>
+        <div class="details-body" id="summary-body" hidden>
         <div class="summary-grid">
           <div class="item wide"><div class="k">${esc(categoryOf(room.category).label)}の評価（${OPT.ratings.map((r) => esc(r.label) + signed(r.points)).join(' ')} の合計）</div>
             <ul class="pt-list">${subs.map((sub) => {
@@ -941,6 +970,7 @@
             }).join('')}</ul></div>
         </div>
         <p class="muted" style="margin:12px 0 0">回答者：${s.respondents.map(esc).join('、')}</p>
+        </div>
       </section>`;
   }
 
@@ -1006,6 +1036,8 @@
         ${renderSummary(summary, room)}
         <p class="footnote">${esc(room.locationName)}から半径${rangeKm}km・候補 ${candidateCount}件から算出${excludedText ? '（除外：' + excludedText + '）' : ''}<br>${credit}</p>
         <a class="btn btn-ghost btn-block" href="/" data-nav>新しいルームを作る</a>`;
+      const st = document.getElementById('summary-toggle');
+      if (st) bindToggle(st);
       return true;
     });
   }
