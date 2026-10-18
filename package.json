@@ -1,0 +1,20 @@
+{
+  "name": "mise-kime",
+  "version": "1.0.0",
+  "description": "みんなで店決め：グループの食事のお店をアンケートで決めるアプリ",
+  "main": "server.js",
+  "private": true,
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "demo": "node scripts/demo.js",
+    "test": "node scripts/unit-test.js && node scripts/smoke-test.js"
+  },
+  "engines": {
+    "node": "22.x"
+  },
+  "dependencies": {
+    "express": "^4.21.2",
+    "pg": "^8.13.1"
+  }
+}
