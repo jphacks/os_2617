@@ -859,7 +859,7 @@
       subs: room.subs,
       ratings: OPT.ratings,
       defaultRating: OPT.defaultRating,
-      imageFor: (sub) => (OPT.foodImages || {})[sub.label] || null,
+      imageFor: (sub) => { const m = OPT.foodImages || {}; return m[room.category + '/' + sub.label] || m[sub.label] || null; },
       categoryLabel: categoryOf(room.category).label,
       header: '<h1>お店選びアンケート</h1><p class="lead">カードをスワイプして答えるだけ、約30秒で終わります（' + room.answerCount + '/' + room.people + '人回答済み）</p>' + roomMeta(room),
       onSubmit: async (body) => {
