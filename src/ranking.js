@@ -5,7 +5,7 @@
  * ■ 誰が何を決めるか
  *   ホスト : 場所（自由記述）・人数・日時・予算（下限〜上限）・大カテゴリ・評価する小カテゴリ
  *            詳細設定：飲み放題・席の希望・禁煙/喫煙・テイクアウト（＝条件）
- *   参加者 : 小カテゴリの評価（◎〇×）（＝好み）
+ *   参加者 : 小カテゴリの評価（〇 好き / ー どちらでもない / × 好みじゃない）（＝好み）
  *
  * ■ 全体の流れ
  *   0. 取得   shopSource.fetchShops() … 場所の周辺のお店をホットペッパーから取得（このファイルの外）
@@ -23,9 +23,9 @@
  *   - 重み_i       : BASE_WEIGHTS の値．ホストが「こだわらない」を選んだ項目
  *                    （予算指定なし・飲み放題どちらでも・席こだわらない）は採点に入れない
  *   - お店の情報がない項目（例：個室の有無が未登録）は 0.5 点（あり=1 と なし=0 の中間）とし，除外もしない
- *   - 小カテゴリは全員が ◎(+1) 〇(0) ×(-2) で評価する（×1つが◎2つ分を打ち消す）．
+ *   - 小カテゴリは全員が 〇(+1) ー(0) ×(-2) で評価する（×1つが〇2つ分を打ち消す）．
  *     店の小カテゴリの1人あたり平均ポイント（-2〜+1）を，「どちらでもない(0)」が 0.5 に
- *     なるよう 0〜1 に換算する（全員◎=1，全員〇=0.5，全員×=0）．
+ *     なるよう 0〜1 に換算する（全員〇=1，全員ー=0.5，全員×=0）．
  *     1つの店が複数の小カテゴリに当たるとき（例：焼き鳥と海鮮）は，それぞれの点の平均
  *   - ペナルティ係数（Must 条件は掛け算で効かせる）
  *       ホストが飲み放題「必須」なのに飲み放題なし … × 0.6
@@ -44,7 +44,7 @@ const { isOpenAt } = require('./shopData');
 const BASE_WEIGHTS = {
   location: 30, //        場所（ホスト）           … 常に有効
   budget: 25, //          予算（ホスト）           … 下限か上限を指定したときだけ有効
-  subCategory: 25, //     小カテゴリの評価（参加者）… 常に有効（全員が◎〇×で評価するため）
+  subCategory: 25, //     小カテゴリの評価（参加者）… 常に有効（全員が〇ー×で評価するため）
   nomihodai: 10, //       飲み放題（ホスト）       … 「必須」のときだけ有効（カフェでは無効）
   seat: 10, //            席の希望（ホスト）       … 「こだわらない」以外のときだけ有効
 };
@@ -58,7 +58,7 @@ const MUST_PENALTY = 0.6; //      Must 条件を満たさない店に掛ける�
 const UNKNOWN_SCORE = 0.5; //     お店の情報がない項目の点
 const TOP_N = 5;
 
-const MAX_RATING_POINTS = Math.max(...RATINGS.map((r) => r.points)); //  ◎ = +1
+const MAX_RATING_POINTS = Math.max(...RATINGS.map((r) => r.points)); //  〇 = +1
 const MIN_RATING_POINTS = Math.min(...RATINGS.map((r) => r.points)); //  × = -2
 const SEAT_LABELS = Object.fromEntries(SEATS.map((s) => [s.value, s.label]));
 const EXCLUDE_REASONS = ['ジャンル外', 'エリア外', '定休日', '営業時間外', '人数オーバー', '喫煙条件'];
@@ -73,7 +73,7 @@ const EXCLUDE_REASONS = ['ジャンル外', 'エリア外', '定休日', '営業
 function summarizeAnswers(answers, room) {
   const subs = room.subs.map((s) => s.value);
 
-  // 小カテゴリ：◎〇× の人数と合計ポイント（◎=+1, 〇=0, ×=-2）
+  // 小カテゴリ：〇ー× の人数と合計ポイント（〇=+1, ー=0, ×=-2）
   const ratingCounts = Object.fromEntries(subs.map((s) => [s, { great: 0, ok: 0, ng: 0 }]));
   const subPoints = Object.fromEntries(subs.map((s) => [s, 0]));
   answers.forEach((a) => {
@@ -83,7 +83,7 @@ function summarizeAnswers(answers, room) {
       subPoints[s] += RATING_POINTS[r];
     });
   });
-  // 最高評価：合計がプラスで，単独トップの小カテゴリ（全員〇などで同点なら該当なし）
+  // 最高評価：合計がプラスで，単独トップの小カテゴリ（全員ーなどで同点なら該当なし）
   const maxPoints = Math.max(...subs.map((s) => subPoints[s]));
   const topSubs = maxPoints > 0 ? subs.filter((s) => subPoints[s] === maxPoints) : [];
 
@@ -153,7 +153,7 @@ function budgetScore(price, budget) {
 
 /**
  * 小カテゴリのスコア：1人あたり平均ポイント（-2〜+1）を 0〜1 に換算．
- * 「どちらでもない(0)」を 0.5 に置き，プラス側は ◎，マイナス側は × の点で割る．
+ * 「どちらでもない(0)」を 0.5 に置き，プラス側は 〇，マイナス側は × の点で割る．
  */
 function subCategoryScore(points, n) {
   const avg = points / n;
@@ -193,8 +193,8 @@ function scoreRestaurant(shop, ctx, summary) {
     });
   }
 
-  // (3) 小カテゴリ：その店の小カテゴリへの ◎〇× を合計し，平均を 0〜1 に換算（複数当たれば平均）
-  //     全員◎ → 1点 / 全員〇 → 0.5点 / 全員× → 0点．×(-2) は ◎(+1) 2つ分を打ち消す
+  // (3) 小カテゴリ：その店の小カテゴリへの 〇ー× を合計し，平均を 0〜1 に換算（複数当たれば平均）
+  //     全員〇 → 1点 / 全員ー → 0.5点 / 全員× → 0点．×(-2) は 〇(+1) 2つ分を打ち消す
   items.push({
     key: 'subCategory',
     label: '小カテゴリ',
@@ -202,7 +202,7 @@ function scoreRestaurant(shop, ctx, summary) {
     score: subs.reduce((s, v) => s + subCategoryScore(summary.subPoints[v], n), 0) / subs.length,
     note: subs.map((v) => {
       const c = summary.ratingCounts[v];
-      return `${ctx.subLabels[v]}: 合計 ${signed(summary.subPoints[v])}pt（◎${c.great} 〇${c.ok} ×${c.ng}）`;
+      return `${ctx.subLabels[v]}: 合計 ${signed(summary.subPoints[v])}pt（〇${c.great} ー${c.ok} ×${c.ng}）`;
     }).join(' / '),
   });
 

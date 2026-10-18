@@ -13,6 +13,7 @@
  */
 const express = require('express');
 const crypto = require('crypto');
+const fs = require('fs');
 const path = require('path');
 
 const OPTIONS = require('./src/options');
@@ -23,8 +24,16 @@ const { createShopClient, createSampleClient, ShopApiError } = require('./src/ho
 const { createShopSource } = require('./src/shopSource');
 const { normalizeShop } = require('./src/shopData');
 const { scopeOf, extraQueries } = require('./src/genreMap');
+const { FOOD_IMAGES } = require('./src/foodImages');
 
 const DEMO_TOOLS = process.env.DEMO_TOOLS !== 'false';
+
+// アンケートのカードの画像：小カテゴリ名 → URL（public/food/ に実際にあるものだけ）
+const FOOD_IMAGE_URLS = Object.fromEntries(
+  Object.entries(FOOD_IMAGES)
+    .filter(([, file]) => fs.existsSync(path.join(__dirname, 'public', 'food', file)))
+    .map(([label, file]) => [label, `/assets/food/${encodeURIComponent(file)}`]),
+);
 
 /**
  * @param store       保存先（src/store.js）
@@ -213,6 +222,7 @@ function createApp(store, shopClient = createShopClient()) {
       categories: OPTIONS.CATEGORIES,
       categoriesWithoutNomihodai: OPTIONS.CATEGORIES_WITHOUT_NOMIHODAI,
       ratings: OPTIONS.RATINGS,
+      foodImages: FOOD_IMAGE_URLS,
       defaultRating: OPTIONS.DEFAULT_RATING,
       nomihodai: OPTIONS.NOMIHODAI,
       seats: OPTIONS.SEATS,
@@ -301,7 +311,7 @@ function createApp(store, shopClient = createShopClient()) {
     let n = 1;
     while (names.includes(`サンプル${n}`)) n += 1;
     const subs = room.subs.map((s) => s.value);
-    // 先頭寄りの小カテゴリほど ◎ が付きやすい（好みが偏るように）
+    // 先頭寄りの小カテゴリほど 〇（好き）が付きやすい（好みが偏るように）
     const ratings = Object.fromEntries(subs.map((s, i) => {
       const r = Math.random();
       const great = 0.45 - (0.3 * i) / subs.length;

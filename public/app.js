@@ -162,7 +162,7 @@
   /** 招待：アンケートへの共有リンク */
   const inviteLines = (room) => [
     '【みんなで店決め】' + roomTitle(room) + 'のお店をアンケートで決めます！',
-    'ジャンルの好みを ◎〇× で答えるだけ（30秒）',
+    'ジャンルの好みをスワイプで 〇ー× 答えるだけ（30秒）',
     room.shareUrl,
   ];
   /** 結果：上位3件とランキングのページ */
@@ -314,7 +314,7 @@
           ${chips('category', OPT.categories, 'radio', 'izakaya')}
         </fieldset>
         <fieldset class="field sub-editor"><legend class="field-label">評価する小カテゴリ <small>このルームだけの設定</small></legend>
-          <p class="muted" style="margin:0 0 8px">参加者はこれらを ◎〇× で評価します。× で削除、下の欄から追加できます</p>
+          <p class="muted" style="margin:0 0 8px">参加者はこれらをスワイプで 〇ー× 評価します。× で削除、下の欄から追加できます</p>
           <div class="sub-chips" id="sub-chips"></div>
           <div class="sub-removed" id="sub-removed" hidden></div>
           <div class="share-box sub-add">
@@ -346,7 +346,7 @@
 
       <ol class="steps">
         <li>ルームを作成して共有リンクを発行</li>
-        <li>参加者がジャンルの好みを ◎〇× で回答（約30秒）</li>
+        <li>参加者がジャンルの好みをスワイプで 〇ー× 回答（約30秒）</li>
         <li>全員の回答が揃う、またはホストが締め切るとランキングを表示</li>
       </ol>`;
 
@@ -602,7 +602,242 @@
   }
 
   /* =========================================================================
-   * 画面3: アンケート回答
+   * スワイプ式アンケート：小カテゴリを1枚ずつカードで評価 → 最後に一覧で確認して送信
+   *   右スワイプ / 〇 = 好き、上下スワイプ / ー = どちらでもない、左スワイプ / × = 好みじゃない
+   *   キーボード：→ 〇 / ↑↓ ー / ← × / Backspace 1つ戻る
+   * ====================================================================== */
+  const SWIPE_COMMIT_PX = 80; // これ以上動かして離したら確定
+  // ボタンの記号（参考デザインに合わせて線で描く）
+  const RATE_ICONS = {
+    ng: '<svg viewBox="0 0 32 32" aria-hidden="true"><path d="M9 9l14 14M23 9L9 23" fill="none" stroke="currentColor" stroke-width="3.4" stroke-linecap="round"/></svg>',
+    ok: '<svg viewBox="0 0 32 32" aria-hidden="true"><path d="M8 16h16" fill="none" stroke="currentColor" stroke-width="3.6" stroke-linecap="round"/></svg>',
+    great: '<svg viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="9.5" fill="none" stroke="currentColor" stroke-width="3.4"/></svg>',
+  };
+  const reducedMotion = () => window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  /** 画像のない小カテゴリ（ホストが追加したものなど）は文字だけのカード。名前から色を決める */
+  function textCardStyle(label) {
+    let h = 0;
+    for (const ch of label) h = (h * 31 + ch.codePointAt(0)) % 360;
+    return 'background:linear-gradient(150deg,hsl(' + h + ' 70% 62%),hsl(' + ((h + 40) % 360) + ' 75% 45%))';
+  }
+  function cardVisual(sub, imageFor) {
+    const src = imageFor(sub);
+    return src
+      ? '<img class="swipe-img" src="' + esc(src) + '" alt="" draggable="false">'
+      : '<div class="swipe-text" style="' + textCardStyle(sub.label) + '"><span>' + esc(sub.label) + '</span></div>';
+  }
+
+  /**
+   * @param root  描画先
+   * @param opts  { subs, ratings, defaultRating, imageFor(sub), header(HTML), categoryLabel, onSubmit({name, ratings}) → Promise }
+   * @returns 後片付け用の関数（キーボード操作の解除）
+   */
+  function runSwipeSurvey(root, opts) {
+    const { subs, ratings, defaultRating, imageFor, onSubmit } = opts;
+    const byValue = Object.fromEntries(ratings.map((r) => [r.value, r]));
+    const answers = {};
+    let stage = 'intro'; // intro → cards → confirm
+    let index = 0;
+    let name = '';
+    let busy = false;
+    let lastOkDir = -1; //  「どちらでもない」で飛ばす向き（上 -1 / 下 1）
+
+    const btns = () => ratings.slice().sort((a, b) => ['ng', 'ok', 'great'].indexOf(a.value) - ['ng', 'ok', 'great'].indexOf(b.value));
+    const legend = '<span><b class="c-great">' + esc(byValue.great.label) + '</b> 右スワイプ＝' + esc(byValue.great.hint) + '</span>' +
+      '<span><b class="c-ok">' + esc(byValue.ok.label) + '</b> 上下スワイプ＝' + esc(byValue.ok.hint) + '</span>' +
+      '<span><b class="c-ng">' + esc(byValue.ng.label) + '</b> 左スワイプ＝' + esc(byValue.ng.hint) + '</span>';
+
+    function render() {
+      if (stage === 'intro') return renderIntro();
+      if (stage === 'cards') return renderCard();
+      return renderConfirm();
+    }
+
+    function renderIntro() {
+      root.innerHTML = opts.header + `
+        <form class="card" id="intro-form" novalidate>
+          <label class="field"><span class="field-label">ニックネーム</span>
+            <input type="text" id="nickname" maxlength="20" placeholder="例：たなか" autocomplete="nickname" required value="${esc(name)}">
+            <span class="muted" style="display:block;margin-top:4px">同じ名前で再回答すると上書きされます</span>
+          </label>
+          <p class="field-label" style="margin:0 0 6px">${esc(opts.categoryLabel)}の好みを ${subs.length}枚 のカードで答えます</p>
+          <p class="muted swipe-legend">${legend}</p>
+          <p class="error" id="intro-error" hidden></p>
+          <button class="btn btn-primary btn-block" type="submit">はじめる</button>
+        </form>`;
+      root.querySelector('#intro-form').addEventListener('submit', (e) => {
+        e.preventDefault();
+        name = root.querySelector('#nickname').value.trim();
+        const err = root.querySelector('#intro-error');
+        if (!name) { err.textContent = 'ニックネームを入力してください'; err.hidden = false; return; }
+        stage = 'cards';
+        index = 0;
+        render();
+      });
+    }
+
+    function renderCard() {
+      window.scrollTo(0, 0);
+      const sub = subs[index];
+      const next = subs[index + 1];
+      const prev = answers[sub.value];
+      root.innerHTML = `
+        <div class="swipe">
+          <div class="swipe-top">
+            <button class="swipe-back" type="button" id="swipe-back"${index === 0 ? ' disabled' : ''}>‹ 1つ戻る</button>
+            <span class="swipe-count">${index + 1} / ${subs.length}</span>
+          </div>
+          <div class="progress swipe-progress"><div style="width:${(index / subs.length) * 100}%"></div></div>
+          <p class="swipe-cat">${esc(opts.categoryLabel)}の好み</p>
+          <h1 class="swipe-title" id="swipe-title">${esc(sub.label)}</h1>
+          <div class="swipe-stage">
+            ${next ? '<div class="swipe-card under" aria-hidden="true">' + cardVisual(next, imageFor) + '</div>' : ''}
+            <div class="swipe-card" id="swipe-card" role="group" aria-labelledby="swipe-title" aria-describedby="swipe-help">
+              ${cardVisual(sub, imageFor)}
+              <span class="stamp stamp-great">${esc(byValue.great.label)} ${esc(byValue.great.hint)}</span>
+              <span class="stamp stamp-ok">${esc(byValue.ok.label)} ${esc(byValue.ok.hint)}</span>
+              <span class="stamp stamp-ng">${esc(byValue.ng.label)} ${esc(byValue.ng.hint)}</span>
+            </div>
+          </div>
+          <div class="swipe-buttons">${btns().map((r) => `
+            <button class="swipe-btn b-${esc(r.value)}${prev === r.value ? ' was' : ''}" type="button" data-rate="${esc(r.value)}" aria-label="${esc(sub.label)}：${esc(r.hint)}（${esc(r.label)}）">
+              <span class="mark">${RATE_ICONS[r.value] || esc(r.label)}</span><small>${esc(r.hint)}</small></button>`).join('')}
+          </div>
+          <p class="muted swipe-legend" id="swipe-help">${legend}</p>
+          <p class="visually-hidden" aria-live="polite" id="swipe-live"></p>
+        </div>`;
+      // 次の画像を先に読み込む
+      const after = subs[index + 2];
+      if (after && imageFor(after)) new Image().src = imageFor(after);
+
+      const card = root.querySelector('#swipe-card');
+      root.querySelector('#swipe-back').onclick = back;
+      root.querySelectorAll('.swipe-btn').forEach((b) => { b.onclick = () => commit(b.dataset.rate, 0, -1); });
+      attachDrag(card);
+    }
+
+    /** カードをドラッグ／スワイプで動かす。離したときの向きで評価を決める */
+    function attachDrag(card) {
+      let id = null;
+      let sx = 0;
+      let sy = 0;
+      let dx = 0;
+      let dy = 0;
+      let t0 = 0;
+      const intentOf = () => (Math.abs(dx) >= Math.abs(dy) ? (dx > 0 ? 'great' : 'ng') : 'ok');
+      card.addEventListener('pointerdown', (e) => {
+        if (busy || (e.pointerType === 'mouse' && e.button !== 0)) return;
+        id = e.pointerId;
+        sx = e.clientX; sy = e.clientY; dx = 0; dy = 0; t0 = performance.now();
+        card.setPointerCapture(id);
+        card.classList.add('dragging');
+      });
+      card.addEventListener('pointermove', (e) => {
+        if (e.pointerId !== id) return;
+        dx = e.clientX - sx;
+        dy = e.clientY - sy;
+        card.style.transform = 'translate(' + dx + 'px,' + dy + 'px) rotate(' + dx * 0.05 + 'deg)';
+        const dist = Math.hypot(dx, dy);
+        card.dataset.intent = dist > 12 ? intentOf() : '';
+        card.style.setProperty('--stamp', Math.min(1, dist / SWIPE_COMMIT_PX).toFixed(2));
+      });
+      const end = (e) => {
+        if (e.pointerId !== id) return;
+        id = null;
+        card.classList.remove('dragging');
+        const dist = Math.hypot(dx, dy);
+        const speed = dist / Math.max(1, performance.now() - t0); // px/ms
+        if (dist > SWIPE_COMMIT_PX || (dist > 30 && speed > 0.5)) commit(intentOf(), dx, dy);
+        else { card.style.transform = ''; card.dataset.intent = ''; }
+      };
+      card.addEventListener('pointerup', end);
+      card.addEventListener('pointercancel', end);
+    }
+
+    /** 評価を記録してカードを飛ばし、次へ */
+    function commit(value, dx, dy) {
+      if (busy || stage !== 'cards') return;
+      const sub = subs[index];
+      answers[sub.value] = value;
+      const live = root.querySelector('#swipe-live');
+      if (live) live.textContent = sub.label + '：' + byValue[value].hint;
+      const card = root.querySelector('#swipe-card');
+      const go = () => { busy = false; index += 1; if (index >= subs.length) stage = 'confirm'; render(); };
+      if (!card || reducedMotion()) return go();
+      busy = true;
+      if (value === 'ok') lastOkDir = dy > 0 ? 1 : -1;
+      const x = value === 'great' ? 1 : value === 'ng' ? -1 : 0;
+      const y = value === 'ok' ? lastOkDir : 0;
+      card.dataset.intent = value;
+      card.style.setProperty('--stamp', '1');
+      card.style.transition = 'transform 0.28s ease-in, opacity 0.28s ease-in';
+      card.style.transform = 'translate(' + (x * window.innerWidth * 1.1 + dx) + 'px,' + (y * window.innerHeight * 0.8 + dy) + 'px) rotate(' + x * 18 + 'deg)';
+      card.style.opacity = '0';
+      setTimeout(go, 260);
+    }
+
+    function back() {
+      if (busy) return;
+      if (stage === 'confirm') { stage = 'cards'; index = subs.length - 1; return render(); }
+      if (index > 0) { index -= 1; render(); }
+    }
+
+    function renderConfirm() {
+      window.scrollTo(0, 0);
+      root.innerHTML = `
+        <form class="card" id="confirm-form" novalidate>
+          <h2>回答の確認</h2>
+          <p class="muted" style="margin:0 0 8px">${esc(opts.categoryLabel)}の好み。変えたいものはここで選び直せます</p>
+          <ul class="confirm-list">${subs.map((sub) => `
+            <li class="confirm-row" role="radiogroup" aria-label="${esc(sub.label)}">
+              <span class="confirm-thumb">${cardVisual(sub, imageFor)}</span>
+              <span class="rating-name">${esc(sub.label)}</span>
+              <span class="seg">${ratings.map((r) => `<label class="seg-${esc(r.value)}"><input type="radio" name="rate-${esc(sub.value)}" value="${esc(r.value)}"${(answers[sub.value] || defaultRating) === r.value ? ' checked' : ''} aria-label="${esc(sub.label)}：${esc(r.hint)}"><span>${esc(r.label)}</span></label>`).join('')}</span>
+            </li>`).join('')}
+          </ul>
+          <label class="field" style="margin-top:16px"><span class="field-label">ニックネーム</span>
+            <input type="text" id="nickname" maxlength="20" required value="${esc(name)}">
+          </label>
+          <p class="error" id="survey-error" hidden></p>
+          <button class="btn btn-primary btn-block" type="submit" id="survey-btn">回答する</button>
+          <button class="btn btn-ghost btn-block" type="button" id="redo" style="margin-top:10px">最初からカードで答え直す</button>
+        </form>`;
+      const form = root.querySelector('#confirm-form');
+      form.querySelectorAll('input[type=radio]').forEach((el) => el.addEventListener('change', () => { answers[el.name.slice(5)] = el.value; }));
+      root.querySelector('#redo').onclick = () => { stage = 'cards'; index = 0; render(); };
+      form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const err = root.querySelector('#survey-error');
+        name = root.querySelector('#nickname').value.trim();
+        err.hidden = true;
+        if (!name) { err.textContent = 'ニックネームを入力してください'; err.hidden = false; return; }
+        const btn = root.querySelector('#survey-btn');
+        btn.disabled = true;
+        try {
+          await onSubmit({ name, ratings: Object.fromEntries(subs.map((s) => [s.value, answers[s.value] || defaultRating])) });
+        } catch (ex) {
+          err.textContent = ex.message || String(ex);
+          err.hidden = false;
+          btn.disabled = false;
+        }
+      });
+    }
+
+    // キーボード：→ 好き / ← 好みじゃない / ↑↓ どちらでもない / Backspace 戻る（入力欄では無効）
+    const onKey = (e) => {
+      if (stage !== 'cards' || e.target.closest('input, textarea, select') || e.metaKey || e.ctrlKey || e.altKey) return;
+      const map = { ArrowRight: 'great', ArrowLeft: 'ng', ArrowUp: 'ok', ArrowDown: 'ok' };
+      if (map[e.key]) { e.preventDefault(); commit(map[e.key], 0, e.key === 'ArrowDown' ? 1 : -1); }
+      else if (e.key === 'Backspace') { e.preventDefault(); back(); }
+    };
+    document.addEventListener('keydown', onKey);
+    render();
+    return () => document.removeEventListener('keydown', onKey);
+  }
+
+  /* =========================================================================
+   * 画面3: アンケート回答（スワイプ式）
    * ====================================================================== */
   async function viewSurvey(roomId) {
     app.innerHTML = '<p class="muted">読み込み中…</p>';
@@ -619,54 +854,18 @@
       app.innerHTML = '<h1>アンケートは締め切られました</h1>' + roomMeta(room) + '<a class="btn btn-primary btn-block" href="/rooms/' + roomId + '/result" data-nav>ランキングを見る</a>';
       return;
     }
-    const subs = room.subs;
-    const catLabel = categoryOf(room.category).label;
-
     // 予算・ジャンル・飲み放題・席・テイクアウトはホストが決定済み。参加者は小カテゴリの好みだけ答える
-    app.innerHTML = `
-      <h1>お店選びアンケート</h1>
-      <p class="lead">選ぶだけ、約30秒で終わります（${room.answerCount}/${room.people}人回答済み）</p>
-      ${roomMeta(room)}
-      <form class="card" id="survey-form" novalidate>
-        <label class="field"><span class="field-label">ニックネーム</span>
-          <input type="text" id="nickname" name="name" maxlength="20" placeholder="例：たなか" autocomplete="nickname" required>
-          <span class="muted" style="display:block;margin-top:4px">同じ名前で再回答すると上書きされます</span>
-        </label>
-        <fieldset class="field"><legend class="field-label">${esc(catLabel)}の中の好み</legend>
-          <p class="muted rating-legend">${OPT.ratings.map((r) => '<span>' + esc(r.label) + ' ' + esc(r.hint) + '（' + signed(r.points) + '）</span>').join('')}</p>
-          <p class="muted" style="margin:0 0 8px">最初は全部 〇 です。変えたいものだけ選び直してください</p>
-          <div class="rating-list">${subs.map((sub) => `
-            <div class="rating-row" role="radiogroup" aria-label="${esc(sub.label)}">
-              <span class="rating-name">${esc(sub.label)}</span>
-              <span class="seg">${OPT.ratings.map((r) => `<label class="seg-${esc(r.value)}"><input type="radio" name="rate-${esc(sub.value)}" value="${esc(r.value)}"${r.value === OPT.defaultRating ? ' checked' : ''} aria-label="${esc(sub.label)}：${esc(r.label)} ${esc(r.hint)}"><span>${esc(r.label)}</span></label>`).join('')}</span>
-            </div>`).join('')}
-          </div>
-        </fieldset>
-        <p class="error" id="survey-error" hidden></p>
-        <button class="btn btn-primary btn-block" type="submit" id="survey-btn">回答する</button>
-      </form>`;
-
-    const form = document.getElementById('survey-form');
-    form.addEventListener('submit', async (e) => {
-      e.preventDefault();
-      const err = document.getElementById('survey-error');
-      const fd = new FormData(form);
-      const body = {
-        name: String(fd.get('name') || '').trim(),
-        ratings: Object.fromEntries(subs.map((s) => [s.value, fd.get('rate-' + s.value) || OPT.defaultRating])),
-      };
-      err.hidden = true;
-      if (!body.name) { err.textContent = 'ニックネームを入力してください'; err.hidden = false; return; }
-      const btn = document.getElementById('survey-btn');
-      btn.disabled = true;
-      try {
+    stopPolling = runSwipeSurvey(app, {
+      subs: room.subs,
+      ratings: OPT.ratings,
+      defaultRating: OPT.defaultRating,
+      imageFor: (sub) => (OPT.foodImages || {})[sub.label] || null,
+      categoryLabel: categoryOf(room.category).label,
+      header: '<h1>お店選びアンケート</h1><p class="lead">カードをスワイプして答えるだけ、約30秒で終わります（' + room.answerCount + '/' + room.people + '人回答済み）</p>' + roomMeta(room),
+      onSubmit: async (body) => {
         await api('/api/rooms/' + roomId + '/answers', { method: 'POST', body });
         navigate('/rooms/' + roomId + '/result', { answered: true });
-      } catch (ex) {
-        err.textContent = ex.message;
-        err.hidden = false;
-        btn.disabled = false;
-      }
+      },
     });
   }
 
@@ -738,7 +937,7 @@
             <ul class="pt-list">${subs.map((sub) => {
               const c = s.ratingCounts[sub.value];
               const pts = s.subPoints[sub.value];
-              return '<li><span>' + esc(sub.label) + '</span><span class="muted">◎' + c.great + ' 〇' + c.ok + ' ×' + c.ng + '</span><b class="' + (pts < 0 ? 'neg' : '') + '">' + signed(pts) + '</b></li>';
+              return '<li><span>' + esc(sub.label) + '</span><span class="muted">〇' + c.great + ' ー' + c.ok + ' ×' + c.ng + '</span><b class="' + (pts < 0 ? 'neg' : '') + '">' + signed(pts) + '</b></li>';
             }).join('')}</ul></div>
         </div>
         <p class="muted" style="margin:12px 0 0">回答者：${s.respondents.map(esc).join('、')}</p>
